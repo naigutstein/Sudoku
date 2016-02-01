@@ -1,0 +1,365 @@
+#Naomi Gutstein - nyg316
+
+#Sudoku Starter
+import struct, string, math, copy
+
+class SudokuBoard:
+    """This will be the sudoku board game object your player will manipulate."""
+  
+    def __init__(self, size, board):
+      """the constructor for the SudokuBoard"""
+      self.BoardSize = size #the size of the board
+      self.CurrentGameBoard= board #the current state of the game board
+
+    def set_value(self, row, col, value):
+        """This function will create a new sudoku board object with the input
+        value placed on the GameBoard row and col are both zero-indexed"""
+
+        #add the value to the appropriate position on the board
+        self.CurrentGameBoard[row][col]=value
+        #return a new board of the same size with the value added
+        return SudokuBoard(self.BoardSize, self.CurrentGameBoard)
+                                                                  
+                                                                  
+    def print_board(self):
+        """Prints the current game board. Leaves unassigned spots blank."""
+        div = int(math.sqrt(self.BoardSize))
+        dash = ""
+        space = ""
+        line = "+"
+        sep = "|"
+        for i in range(div):
+            dash += "----"
+            space += "    "
+        for i in range(div):
+            line += dash + "+"
+            sep += space + "|"
+        for i in range(-1, self.BoardSize):
+            if i != -1:
+                print "|",
+                for j in range(self.BoardSize):
+                    if self.CurrentGameBoard[i][j] > 9:
+                        print self.CurrentGameBoard[i][j],
+                    elif self.CurrentGameBoard[i][j] > 0:
+                        print "", self.CurrentGameBoard[i][j],
+                    else:
+                        print "  ",
+                    if (j+1 != self.BoardSize):
+                        if ((j+1)//div != j/div):
+                            print "|",
+                        else:
+                            print "",
+                    else:
+                        print "|"
+            if ((i+1)//div != i/div):
+                print line
+            else:
+                print sep
+
+def parse_file(filename):
+    """Parses a sudoku text file into a BoardSize, and a 2d array which holds
+    the value of each cell. Array elements holding a 0 are considered to be
+    empty."""
+
+    f = open(filename, 'r')
+    BoardSize = int( f.readline())
+    NumVals = int(f.readline())
+
+    #initialize a blank board
+    board= [ [ 0 for i in range(BoardSize) ] for j in range(BoardSize) ]
+
+    #populate the board with initial values
+    for i in range(NumVals):
+        line = f.readline()
+        chars = line.split()
+        row = int(chars[0])
+        col = int(chars[1])
+        val = int(chars[2])
+        board[row-1][col-1]=val
+    
+    return board
+    
+def is_complete(sudoku_board):
+    """Takes in a sudoku board and tests to see if it has been filled in
+    correctly."""
+    BoardArray = sudoku_board.CurrentGameBoard
+    size = len(BoardArray)
+    subsquare = int(math.sqrt(size))
+
+    #check each cell on the board for a 0, or if the value of the cell
+    #is present elsewhere within the same row, column, or square
+    for row in range(size):
+        for col in range(size):
+            if BoardArray[row][col]==0:
+                return False
+            for i in range(size):
+                if ((BoardArray[row][i] == BoardArray[row][col]) and i != col):
+                    return False
+                if ((BoardArray[i][col] == BoardArray[row][col]) and i != row):
+                    return False
+            #determine which square the cell is in
+            SquareRow = row // subsquare
+            SquareCol = col // subsquare
+            for i in range(subsquare):
+                for j in range(subsquare):
+                    if((BoardArray[SquareRow*subsquare+i][SquareCol*subsquare+j]
+                            == BoardArray[row][col])
+                        and (SquareRow*subsquare + i != row)
+                        and (SquareCol*subsquare + j != col)):
+                            return False
+    return True
+
+def init_board(file_name):
+    """Creates a SudokuBoard object initialized with values from a text file"""
+    board = parse_file(file_name)
+    return SudokuBoard(len(board), board)
+
+def solve(initial_board, forward_checking = False, MRV = False, MCV = False,
+    LCV = False):
+    """Takes an initial SudokuBoard and solves it using back tracking, and zero
+    or more of the heuristics and constraint propagation methods (determined by
+    arguments). Returns the resulting board solution. """
+
+    curr_board  = initial_board
+    f_checking = forward_checking
+    #minimum remaining values= choose var with fewest values left
+    my_MRV = MRV
+    #most constrained variable (degree)= choose var that is involved in largest num of constraints with unnassigned vars
+    my_MCV = MCV
+    #least constrained value= choose value that rules out fewest choices for other unnassigned vars
+    my_LCV = LCV
+
+    #call DFS on board to solve
+    backtrack(curr_board, 0, f_checking, my_MRV, my_MCV, my_LCV)
+    
+    #print "Your code will solve the initial_board here!"
+    #print "Remember to return the final board (the SudokuBoard object)."
+    #print "I'm simply returning initial_board for demonstration purposes."
+    return curr_board
+
+# Uses the validation checks written below to assemble a list of valid potential values
+# for square at given row and column
+def potentialVals(curr_board, row, col):
+    potentialList = list()
+    for i in range(1, curr_board.BoardSize + 1):
+        if validRowCol(curr_board, row, col, i) and validBox(curr_board, row, col, i):
+            potentialList.append(i)
+    return potentialList
+
+# Checks for conflict with a potential value and the other squares in the same row or column
+def validRowCol(curr_board, row, col, val):
+    for i in range(0, curr_board.BoardSize):
+        if ((curr_board.CurrentGameBoard[row][i] == val) or (curr_board.CurrentGameBoard[i][col] == val)):
+            return False
+    return True
+
+# Checks for conflict with a potential value and the other squares in the same small box
+def validBox(curr_board, row, col, val):
+    ss = int(math.sqrt(curr_board.BoardSize))
+    sRow = int((row / ss) * ss)
+    sCol = int((col / ss) * ss)
+
+    for i in range(0, ss):
+        for j in range(0, ss):
+            if (curr_board.CurrentGameBoard[sRow+i][sCol+j] == val):
+                return False
+    return True
+
+# Finds unassigned neighboring squares, with neighboring being defined as
+# within the same row, within the same column, or within the same small box
+def getEmptyNeighbors(curr_board, row, col):
+    neighbors = list()
+    # Search rows and columns first
+    for i in range(0, curr_board.BoardSize):
+        if (curr_board.CurrentGameBoard[row][i] == 0 and 
+            [row, i] not in neighbors and [row, i] != [row, col]):
+            neighbors.append([row, i])
+        if (curr_board.CurrentGameBoard[i][col] == 0 and 
+            [i, col] not in neighbors and [i, col] != [row, col]):
+            neighbors.append([i, col])
+    # Search boxes
+    ss = int(math.sqrt(curr_board.BoardSize))
+    sRow = int((row / ss) * ss)
+    sCol = int((col / ss) * ss)
+    for i in range(0, ss):
+        for j in range(0, ss):
+            if (curr_board.CurrentGameBoard[sRow+i][sCol+j] == 0 and 
+                ([sRow+i, sCol+j] not in neighbors) and [sRow+i, sCol+j] != [row, col]):
+                neighbors.append([sRow+i, sCol+j])
+    return neighbors
+
+
+def backtrack(curr_board, check, forward_checking = False, MRV = False, MCV = False, LCV = False):
+    # if the board is complete return the current board
+    if is_complete(curr_board):
+        print ("Completed in " + str(check) + " consistency checks")
+        curr_board.print_board()
+        return curr_board
+    else:
+        my_count = check
+        newBoard = copy.deepcopy(curr_board)
+        if forward_checking == False:
+            for row in range(0, curr_board.BoardSize):
+                for col in range(0, curr_board.BoardSize):
+                    curValue = newBoard.CurrentGameBoard[row][col]
+                    # check if value at row,col is unassigned
+                    if curValue == 0:
+                        # iterate through all possible values, whether valid or not
+                        for digit in range(1, (curr_board.BoardSize + 1)):
+                            my_count = my_count + 1 
+                            # check to make sure value is non-conflicting before assigning
+                            if (validRowCol(newBoard, row, col, digit) and validBox(newBoard, row, col, digit)):
+                                newBoard.CurrentGameBoard[row][col] = digit
+                                nextBoard = backtrack(newBoard, my_count, False, False, False, False)
+                                # if nextBoard returns anything but None, it means solution is found
+                                if nextBoard != None:
+                                    return nextBoard
+                        # Return None after iterating through all digits for a square
+                        return None
+
+        ###########################
+        ##   Forward Checking    ##
+        ###########################
+        elif [forward_checking, MRV, MCV, LCV] == [True, False, False, False]:
+            for row in range(0, curr_board.BoardSize):
+                for col in range(0, curr_board.BoardSize):
+                    curValue = newBoard.CurrentGameBoard[row][col]
+                    if curValue == 0:
+                        # builds array of potential valid values
+                        potentials = potentialVals(newBoard, row, col)
+                        for digit in potentials:
+                            my_count = my_count + 1
+                            newBoard.CurrentGameBoard[row][col] = digit
+                            nextBoard = backtrack(newBoard, my_count, True, False, False, False)
+                            # if nextBoard returns anything but None, it means solution is found
+                            if nextBoard != None:
+                                return nextBoard
+                        return None
+
+        ##########################
+        ##         MRV          ##
+        ##########################
+        elif [forward_checking, MRV, MCV, LCV] == [True, True, False, False]:
+            choice = [-1,-1,curr_board.BoardSize,[]]
+            for row in range(0, curr_board.BoardSize):
+                for col in range(0, curr_board.BoardSize):
+                    curValue = newBoard.CurrentGameBoard[row][col]
+                    if curValue == 0:
+                        # builds array of potential valid values
+                        potentials = potentialVals(newBoard, row, col)
+                        # if less than current minimum of remaining values, reassign
+                        if len(potentials) < choice[2]:
+                            choice[0] = row
+                            choice[1] = col
+                            choice[2] = len(potentials)
+                            choice[3] = potentials
+            # choice[3] holds potential values of square with MRV
+            for digit in choice[3]:
+                my_count = my_count + 1
+                newBoard.CurrentGameBoard[choice[0]][choice[1]] = digit
+                nextBoard = backtrack(newBoard, my_count, True, True, False, False)
+                # if nextBoard returns anything but None, it means solution is found
+                if nextBoard != None:
+                    return nextBoard
+            return None
+
+        ####################
+        ##    MCV         ##
+        ####################
+        elif [forward_checking, MRV, MCV, LCV] == [True, False, True, False]:
+            choice = [-1,-1,0]
+            for row in range(0, curr_board.BoardSize):
+                for col in range(0, curr_board.BoardSize):
+                    curValue = newBoard.CurrentGameBoard[row][col]
+                    if curValue == 0:
+                        affected = getEmptyNeighbors(newBoard, row, col)
+                        # if greater than current maximum of MCV, reassign
+                        if len(affected) >= choice[2]:
+                            choice[0] = row
+                            choice[1] = col
+                            choice[2] = len(affected)
+            # choice[3] holds potential values of square with MCV
+            for digit in potentialVals(newBoard, choice[0], choice[1]):
+                my_count = my_count + 1
+                newBoard.CurrentGameBoard[choice[0]][choice[1]] = digit
+                nextBoard = backtrack(newBoard, my_count, True, False, True, False)
+                # if nextBoard returns anything but None, it means solution is found
+                if nextBoard != None:
+                    return nextBoard
+            return None
+
+        ######################
+        ##   LCV + MRV      ##
+        ######################
+        elif [forward_checking, MRV, MCV, LCV] == [True, True, False, True]:
+            choice = [-1,-1,curr_board.BoardSize,[]]
+            for row in range(0, curr_board.BoardSize):
+                for col in range(0, curr_board.BoardSize):
+                    curValue = newBoard.CurrentGameBoard[row][col]
+                    if curValue == 0:
+                        potentials = potentialVals(newBoard, row, col)
+                        # if less than current minimum of remaining values, reassign
+                        if len(potentials) < choice[2]:
+                            choice[0] = row
+                            choice[1] = col
+                            choice[2] = len(potentials)
+                            choice[3] = potentials
+            # builds list of neighbors
+            affected = getEmptyNeighbors(newBoard, choice[0], choice[1])
+            count = len(affected)
+            chosenVal = -1
+            priority = list()
+            # choice[3] holds potential values of square with MRV
+            for digit in choice[3]:
+                # counter to measure how many neighbors share this digit as a potential value
+                tempCount = 0
+                for neighbor in affected:
+                    if digit in potentialVals(newBoard, neighbor[0], neighbor[1]):
+                        tempCount += 1
+                priority.append([digit, tempCount])
+            # sorts list in ascending order based on number of neighbors that have
+            # a given value in its potential values
+            priority = sorted(priority, key=lambda thing: thing[1])
+            for element in priority:
+                my_count = my_count + 1
+                newBoard.CurrentGameBoard[choice[0]][choice[1]] = element[0]
+                nextBoard = backtrack(newBoard, my_count, True, True, False, True)
+                # if nextBoard returns anything but None, it means solution is found
+                if nextBoard != None:
+                    return nextBoard
+            return None
+
+        ######################
+        ##       LCV        ##
+        ######################
+        elif [forward_checking, MRV, MCV, LCV] == [True, False, False, True]:
+            for row in range(0, curr_board.BoardSize):
+                for col in range(0, curr_board.BoardSize):
+                    curValue = newBoard.CurrentGameBoard[row][col]
+                    if curValue == 0:
+                        ##### new below
+                        potentials = potentialVals(newBoard, row, col)
+                        # builds list of neighbors
+                        affected = getEmptyNeighbors(newBoard, row, col)
+                        count = len(affected)
+                        chosenVal = -1
+                        priority = list()
+                        for digit in potentials:
+                            # counter to measure how many neighbors share this digit as a potential value
+                            tempCount = 0
+                            for neighbor in affected:
+                                if digit in potentialVals(newBoard, neighbor[0], neighbor[1]):
+                                    tempCount += 1
+                            priority.append([digit, tempCount])
+                        # sorts list in ascending order based on number of neighbors that have
+                        # a given value in its potential values
+                        priority = sorted(priority, key=lambda thing: thing[1])
+                        for element in priority:
+                            my_count = my_count + 1
+                            newBoard.CurrentGameBoard[row][col] = element[0]
+                            nextBoard = backtrack(newBoard, my_count, True, True, False, True)
+                            # if nextBoard returns anything but None, it means solution is found
+                            if nextBoard != None:
+                                return nextBoard
+                        return None
+                
